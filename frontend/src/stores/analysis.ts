@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { askAI, fetchHealth, uploadPcap } from '../api'
+import { API_BASE, askAI, fetchHealth, uploadPcap } from '../api'
 import type { AIResponse, Analysis, Health } from '../types'
 
 export const useAnalysisStore = defineStore('analysis', () => {
@@ -11,6 +11,23 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const aiLoading = ref(false)
   const error = ref('')
   const aiError = ref('')
+  const liveStatus = ref('Подключение к live-захвату…')
+  const livePackets = ref<any[]>([])
+  const liveLogs = ref<string[]>([])
+  let stream: EventSource | null = null
+
+  function connectLive() {
+    stream?.close()
+    stream = new EventSource(`${API_BASE}/api/live`)
+    stream.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      liveStatus.value = data.status
+      analysis.value = data.analysis
+      livePackets.value = data.packets
+      liveLogs.value = data.logs
+    }
+    stream.onerror = () => { liveStatus.value = 'Нет соединения с live-захватом' }
+  }
 
   async function loadHealth() {
     try {
@@ -64,6 +81,10 @@ export const useAnalysisStore = defineStore('analysis', () => {
     error,
     aiError,
     loadHealth,
+    connectLive,
+    liveStatus,
+    livePackets,
+    liveLogs,
     analyze,
     runAI,
     reset,

@@ -17,9 +17,11 @@ RUN apt-get update \
  && echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections \
  && apt-get install -y --no-install-recommends \
       tshark \
+      libcap2-bin \
       ca-certificates \
       tini \
  && rm -rf /var/lib/apt/lists/* \
+ && setcap cap_net_raw+eip /usr/bin/dumpcap \
  && mkdir -p /app /tmp/traffic-guardian \
  && useradd --uid 10001 --home-dir /app --shell /usr/sbin/nologin guardian \
  && chown -R guardian:guardian /app /tmp/traffic-guardian

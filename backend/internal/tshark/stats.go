@@ -10,7 +10,7 @@ import (
 func BuildStats(packets []models.PacketRow) (models.Summary, []models.ProtocolStat, []models.Talker, []models.Conversation) {
 	summary := models.Summary{PacketCount: len(packets)}
 	if len(packets) == 0 {
-		return summary, nil, nil, nil
+		return summary, []models.ProtocolStat{}, []models.Talker{}, []models.Conversation{}
 	}
 
 	protoPkts := map[string]int{}

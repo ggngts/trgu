@@ -2,6 +2,7 @@ import type { AIResponse, Analysis, Health } from './types'
 
 /** Production API — baked in, no .env */
 const BASE = 'https://api2.mpnetwork.space'
+export const API_BASE = BASE
 
 async function parse<T>(res: Response): Promise<T> {
   const data = await res.json().catch(() => ({}))

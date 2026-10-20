@@ -33,8 +33,34 @@ func (r *Runner) Available() error {
 
 // ParsePackets exports a compact field set for heuristic analysis.
 func (r *Runner) ParsePackets(pcapPath string) ([]models.PacketRow, error) {
-	args := []string{
-		"-r", pcapPath,
+	args := append([]string{"-r", pcapPath}, fieldArgs()...)
+
+	cmd := exec.Command(r.Path, args...)
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("tshark parse failed: %s", strings.TrimSpace(string(ee.Stderr)))
+		}
+		return nil, err
+	}
+
+	rows := make([]models.PacketRow, 0, 1024)
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	buf := make([]byte, 0, 1024*64)
+	sc.Buffer(buf, 1024*1024)
+	for sc.Scan() {
+		if row, ok := parseRow(sc.Text()); ok {
+			rows = append(rows, row)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func fieldArgs() []string {
+	return []string{
 		"-T", "fields",
 		"-E", "separator=\t",
 		"-E", "quote=n",
@@ -60,65 +86,45 @@ func (r *Runner) ParsePackets(pcapPath string) ([]models.PacketRow, error) {
 		"-e", "http.request.method",
 		"-e", "tls.handshake.extensions_server_name",
 	}
+}
 
-	cmd := exec.Command(r.Path, args...)
-	out, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("tshark parse failed: %s", strings.TrimSpace(string(ee.Stderr)))
-		}
-		return nil, err
+func parseRow(line string) (models.PacketRow, bool) {
+	if line == "" {
+		return models.PacketRow{}, false
+	}
+	cols := strings.Split(line, "\t")
+	for len(cols) < 20 {
+		cols = append(cols, "")
 	}
 
-	rows := make([]models.PacketRow, 0, 1024)
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	// large packets / long DNS names
-	buf := make([]byte, 0, 1024*64)
-	sc.Buffer(buf, 1024*1024)
-
-	for sc.Scan() {
-		line := sc.Text()
-		if line == "" {
-			continue
-		}
-		cols := strings.Split(line, "\t")
-		for len(cols) < 20 {
-			cols = append(cols, "")
-		}
-
-		row := models.PacketRow{
-			Number:        atoi(cols[0]),
-			TimeRel:       atof(cols[1]),
-			SrcIP:         cols[2],
-			DstIP:         cols[3],
-			Protocol:      cols[8],
-			Length:        atoi(cols[9]),
-			TCPSyn:        cols[10] == "1" || cols[10] == "True",
-			TCPAck:        cols[11] == "1" || cols[11] == "True",
-			TCPFin:        cols[12] == "1" || cols[12] == "True",
-			TCPRst:        cols[13] == "1" || cols[13] == "True",
-			ICMPType:      atoi(cols[14]),
-			DNSQuery:      cols[15],
-			HTTPHost:      cols[16],
-			HTTPURI:       cols[17],
-			HTTPMethod:    cols[18],
-			TLSServerName: cols[19],
-		}
-
-		tcpSport, tcpDport := atoi(cols[4]), atoi(cols[5])
-		udpSport, udpDport := atoi(cols[6]), atoi(cols[7])
-		if tcpSport > 0 || tcpDport > 0 {
-			row.SrcPort, row.DstPort = tcpSport, tcpDport
-		} else {
-			row.SrcPort, row.DstPort = udpSport, udpDport
-		}
-
-		rows = append(rows, row)
+	row := models.PacketRow{
+		Number:        atoi(cols[0]),
+		TimeRel:       atof(cols[1]),
+		SrcIP:         cols[2],
+		DstIP:         cols[3],
+		Protocol:      cols[8],
+		Length:        atoi(cols[9]),
+		TCPSyn:        cols[10] == "1" || cols[10] == "True",
+		TCPAck:        cols[11] == "1" || cols[11] == "True",
+		TCPFin:        cols[12] == "1" || cols[12] == "True",
+		TCPRst:        cols[13] == "1" || cols[13] == "True",
+		ICMPType:      atoi(cols[14]),
+		DNSQuery:      cols[15],
+		HTTPHost:      cols[16],
+		HTTPURI:       cols[17],
+		HTTPMethod:    cols[18],
+		TLSServerName: cols[19],
 	}
-	if err := sc.Err(); err != nil {
-		return nil, err
+
+	tcpSport, tcpDport := atoi(cols[4]), atoi(cols[5])
+	udpSport, udpDport := atoi(cols[6]), atoi(cols[7])
+	if tcpSport > 0 || tcpDport > 0 {
+		row.SrcPort, row.DstPort = tcpSport, tcpDport
+	} else {
+		row.SrcPort, row.DstPort = udpSport, udpDport
 	}
-	return rows, nil
+
+	return row, true
 }
 
 func (r *Runner) ProtocolHierarchy(pcapPath string) (string, error) {

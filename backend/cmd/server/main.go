@@ -33,8 +33,8 @@ func main() {
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute,
-		WriteTimeout:      5 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
+		// Live SSE streams stay open and send updates continuously.
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	log.Printf("traffic-guardian listening on %s (gemini=%v)", cfg.Addr, gm.Enabled())

@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,15 +23,21 @@ import (
 )
 
 type Server struct {
-	cfg    config.Config
-	tshark *tshark.Runner
-	store  *store.Memory
-	gemini *gemini.Client
-	mux    *http.ServeMux
+	cfg         config.Config
+	tshark      *tshark.Runner
+	store       *store.Memory
+	gemini      *gemini.Client
+	mux         *http.ServeMux
+	liveMu      sync.RWMutex
+	livePackets []models.PacketRow
+	liveLogs    []string
+	liveStatus  string
 }
 
 func New(cfg config.Config, ts *tshark.Runner, st *store.Memory, gm *gemini.Client) *Server {
 	s := &Server{cfg: cfg, tshark: ts, store: st, gemini: gm, mux: http.NewServeMux()}
+	s.liveStatus = "Ожидание tshark"
+	go ts.Capture(context.Background(), cfg.CaptureInterface, s.addLivePacket, s.addLiveLog)
 	s.routes()
 	return s
 }
@@ -39,6 +48,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/live", s.handleLive)
 	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
 	s.mux.HandleFunc("GET /api/analysis/{id}", s.handleGetAnalysis)
 	s.mux.HandleFunc("POST /api/analysis/{id}/ai", s.handleAI)
@@ -58,6 +68,64 @@ func (s *Server) routes() {
 			http.ServeFile(w, r, filepath.Join(s.cfg.StaticDir, "index.html"))
 		})
 	}
+}
+
+func (s *Server) addLivePacket(p models.PacketRow) {
+	s.liveMu.Lock()
+	s.livePackets = append(s.livePackets, p)
+	if len(s.livePackets) > 20000 {
+		s.livePackets = append([]models.PacketRow(nil), s.livePackets[len(s.livePackets)-20000:]...)
+	}
+	s.liveStatus = "Захват активен"
+	s.liveMu.Unlock()
+}
+
+func (s *Server) addLiveLog(msg string) {
+	s.liveMu.Lock()
+	s.liveStatus = msg
+	s.liveLogs = append(s.liveLogs, time.Now().Format("15:04:05")+"  "+msg)
+	if len(s.liveLogs) > 100 {
+		s.liveLogs = s.liveLogs[len(s.liveLogs)-100:]
+	}
+	s.liveMu.Unlock()
+}
+
+func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		s.liveMu.RLock()
+		packets := append([]models.PacketRow{}, s.livePackets...)
+		logs := append([]string{}, s.liveLogs...)
+		status := s.liveStatus
+		s.liveMu.RUnlock()
+		summary, protos, talkers, convs := tshark.BuildStats(packets)
+		threats, score := detect.Run(packets, summary)
+		analysis := models.Analysis{ID: "live", Filename: "Live capture · " + s.cfg.CaptureInterface, CreatedAt: time.Now().UTC(), Summary: summary, Protocols: protos, TopTalkers: talkers, Conversations: convs, Threats: threats, ThreatScore: score}
+		payload, _ := json.Marshal(map[string]any{"status": status, "analysis": analysis, "packets": tailPackets(packets, 30), "logs": logs})
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+		flusher.Flush()
+		select {
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func tailPackets(p []models.PacketRow, n int) []models.PacketRow {
+	if len(p) > n {
+		p = p[len(p)-n:]
+	}
+	return p
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -163,10 +231,21 @@ func (s *Server) handleGetAnalysis(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAI(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	a, _, ok := s.store.GetWithPackets(id)
-	if !ok {
-		writeErr(w, http.StatusNotFound, "анализ не найден или истёк")
-		return
+	var a *models.Analysis
+	if id == "live" {
+		s.liveMu.RLock()
+		packets := append([]models.PacketRow(nil), s.livePackets...)
+		s.liveMu.RUnlock()
+		summary, protocols, talkers, convs := tshark.BuildStats(packets)
+		threats, score := detect.Run(packets, summary)
+		a = &models.Analysis{ID: "live", Filename: "Live capture", CreatedAt: time.Now().UTC(), Summary: summary, Protocols: protocols, TopTalkers: talkers, Conversations: convs, Threats: threats, ThreatScore: score}
+	} else {
+		var ok bool
+		a, _, ok = s.store.GetWithPackets(id)
+		if !ok {
+			writeErr(w, http.StatusNotFound, "анализ не найден или истёк")
+			return
+		}
 	}
 	if !s.gemini.Enabled() {
 		writeErr(w, http.StatusServiceUnavailable, "GEMINI_API_KEY не настроен")

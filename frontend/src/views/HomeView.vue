@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { formatBytes } from '../api'
 import { useAnalysisStore } from '../stores/analysis'
 import type { Severity } from '../types'
 
 const store = useAnalysisStore()
-const dragOver = ref(false)
 const question = ref('Дай вердикт по угрозам и что проверить дальше.')
-const fileInput = ref<HTMLInputElement | null>(null)
 
 const scoreClass = computed(() => {
   const s = store.analysis?.threat_score ?? 0
@@ -15,19 +13,6 @@ const scoreClass = computed(() => {
   if (s >= 40) return 'mid'
   return 'good'
 })
-
-function onDrop(e: DragEvent) {
-  dragOver.value = false
-  const f = e.dataTransfer?.files?.[0]
-  if (f) store.analyze(f)
-}
-
-function onFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  if (f) store.analyze(f)
-  input.value = ''
-}
 
 function sevClass(s: Severity) {
   return `sev-${s}`
@@ -51,7 +36,7 @@ function catLabel(c: string) {
         <span class="mark" aria-hidden="true" />
         <div>
           <h1>Traffic Guardian</h1>
-          <p class="tag">PCAP → tshark → эвристики → Gemini</p>
+          <p class="tag">Live traffic → tshark → эвристики → Gemini</p>
         </div>
       </div>
       <div class="status mono fade-rise" style="animation-delay: 0.08s">
@@ -63,28 +48,7 @@ function catLabel(c: string) {
     </header>
 
     <section class="hero fade-rise" style="animation-delay: 0.12s">
-      <div
-        class="drop"
-        :class="{ over: dragOver, busy: store.loading }"
-        @dragover.prevent="dragOver = true"
-        @dragleave.prevent="dragOver = false"
-        @drop.prevent="onDrop"
-        @click="fileInput?.click()"
-      >
-        <input
-          ref="fileInput"
-          type="file"
-          accept=".pcap,.pcapng,.cap"
-          hidden
-          @change="onFile"
-        />
-        <div v-if="store.loading" class="spinner" />
-        <template v-else>
-          <p class="drop-title">Загрузи PCAP</p>
-          <p class="drop-sub">.pcap / .pcapng — разбор на бэке, угрозы без ожидания Gemini</p>
-        </template>
-      </div>
-      <p v-if="store.error" class="err">{{ store.error }}</p>
+      <div class="live-banner"><span :class="store.liveStatus === 'Захват активен' ? 'dot ok pulse' : 'dot mid'" /><strong>{{ store.liveStatus }}</strong><span class="mono muted">интерфейс: {{ store.analysis?.filename.split('·')[1]?.trim() || 'any' }}</span></div>
     </section>
 
     <template v-if="store.analysis">
@@ -102,11 +66,20 @@ function catLabel(c: string) {
             <span>{{ store.analysis.summary.pps.toFixed(0) }} pps</span>
             <span>{{ store.analysis.summary.unique_ips }} IP</span>
           </div>
-          <button class="ghost" type="button" @click="store.reset()">новый файл</button>
+          <span class="live-tag">LIVE</span>
         </div>
       </section>
 
       <section class="grid">
+        <article class="panel wide">
+          <h3>Последние пакеты <span class="badge">live</span></h3>
+          <div class="live-table-wrap"><table class="table mono"><thead><tr><th>#</th><th>time</th><th>source</th><th>destination</th><th>proto</th><th>bytes</th></tr></thead>
+            <tbody><tr v-for="(p, i) in [...store.livePackets].reverse()" :key="i"><td>{{ p.Number }}</td><td>{{ p.TimeRel.toFixed(3) }}s</td><td>{{ p.SrcIP }}:{{ p.SrcPort || '—' }}</td><td>{{ p.DstIP }}:{{ p.DstPort || '—' }}</td><td>{{ p.Protocol }}</td><td>{{ p.Length }}</td></tr></tbody>
+          </table></div>
+        </article>
+        <article class="panel wide">
+          <h3>Логи tshark</h3><div class="live-logs mono"><div v-for="(line, i) in [...store.liveLogs].reverse()" :key="i">{{ line }}</div></div>
+        </article>
         <article class="panel fade-rise" style="animation-delay: 0.05s">
           <h3>Протоколы</h3>
           <ul class="bars">
@@ -288,6 +261,14 @@ h1 {
 .hero {
   margin-bottom: 28px;
 }
+
+.live-banner { display:flex; align-items:center; gap:10px; padding:16px 18px; border:1px solid var(--line); background:rgba(0,168,150,.08); }
+.live-banner .muted { margin-left:auto; font-size:.8rem; }
+.live-tag { display:inline-block; padding:4px 9px; background:var(--danger); color:white; font:600 .7rem var(--mono); letter-spacing:.08em; }
+.pulse { animation: live-pulse 1.6s ease infinite; }
+.live-table-wrap { max-height:300px; overflow:auto; }
+.live-logs { max-height:220px; overflow:auto; padding:12px; background:rgba(0,0,0,.06); font-size:.78rem; line-height:1.8; }
+@keyframes live-pulse { 50% { box-shadow:0 0 0 6px rgba(47,143,91,0); } 0%,100% { box-shadow:0 0 0 0 rgba(47,143,91,.35); } }
 
 .drop {
   border: 1.5px dashed rgba(11, 18, 32, 0.35);

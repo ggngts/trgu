@@ -10,7 +10,7 @@ import (
 // Run executes all local heuristic detectors. No external API calls.
 func Run(packets []models.PacketRow, summary models.Summary) ([]models.Threat, int) {
 	if len(packets) == 0 {
-		return nil, 0
+		return []models.Threat{}, 0
 	}
 
 	var threats []models.Threat
