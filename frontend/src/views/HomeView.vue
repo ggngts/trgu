@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatBytes } from '../api'
 import { useAnalysisStore } from '../stores/analysis'
 import type { Severity } from '../types'
