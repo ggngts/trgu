@@ -9,12 +9,13 @@ RUN npm ci
 COPY . .
 RUN npm run build-only
 
-FROM nginx:1.27-alpine AS runtime
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
 
-RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf
+RUN npm install -g serve@14
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /src/dist /usr/share/nginx/html
+COPY --from=build /src/dist ./dist
 
-EXPOSE 800
-CMD ["nginx", "-g", "daemon off;"]
+USER node
+EXPOSE 801
+CMD ["serve", "-s", "dist", "-l", "801"]

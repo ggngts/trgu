@@ -20,8 +20,8 @@ RUN apt-get update \
       ca-certificates \
       tini \
  && rm -rf /var/lib/apt/lists/* \
- && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin guardian \
- && mkdir -p /tmp/traffic-guardian \
+ && mkdir -p /app /tmp/traffic-guardian \
+ && useradd --uid 10001 --home-dir /app --shell /usr/sbin/nologin guardian \
  && chown -R guardian:guardian /app /tmp/traffic-guardian
 
 COPY --from=build --chown=guardian:guardian /out/traffic-guardian /app/traffic-guardian
