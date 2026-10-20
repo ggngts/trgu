@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PACKAGE_DIR="$SCRIPT_DIR/package"
-OUTPUT=${1:-/tmp/traffic-guardian-host-capture_1.0.0_all.deb}
+OUTPUT=${1:-/tmp/traffic-guardian-host-capture_1.0.1_all.deb}
 
 chmod 0755 \
 	"$PACKAGE_DIR/DEBIAN/postinst" \

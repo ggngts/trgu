@@ -10,7 +10,8 @@ if [ "$1" = configure ]; then
 	fi
 	chmod 0666 "$pipe"
 	systemctl daemon-reload
-	systemctl enable --now traffic-guardian-host-capture.service
+	systemctl enable traffic-guardian-host-capture.service
+	systemctl restart traffic-guardian-host-capture.service
 fi
 
 exit 0
