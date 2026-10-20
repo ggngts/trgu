@@ -65,6 +65,17 @@ export interface Analysis {
   threat_score: number
 }
 
+export interface LivePacket {
+  Number: number
+  TimeRel: number
+  SrcIP: string
+  DstIP: string
+  SrcPort: number
+  DstPort: number
+  Protocol: string
+  Length: number
+}
+
 export interface AIResponse {
   answer: string
   model: string
