@@ -8,7 +8,6 @@ import (
 
 	"sharaga/internal/api"
 	"sharaga/internal/config"
-	"sharaga/internal/gemini"
 	"sharaga/internal/store"
 	"sharaga/internal/tshark"
 )
@@ -25,8 +24,7 @@ func main() {
 	}
 
 	st := store.New(cfg.AnalysisTTL)
-	gm := gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
-	srv := api.New(cfg, ts, st, gm)
+	srv := api.New(cfg, ts, st)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
@@ -37,7 +35,7 @@ func main() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	log.Printf("traffic-guardian listening on %s (gemini=%v)", cfg.Addr, gm.Enabled())
+	log.Printf("traffic-guardian listening on %s", cfg.Addr)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

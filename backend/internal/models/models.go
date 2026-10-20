@@ -77,16 +77,6 @@ type Threat struct {
 	Count       int      `json:"count,omitempty"`
 }
 
-type AIRequest struct {
-	Question string `json:"question"`
-}
-
-type AIResponse struct {
-	Answer    string    `json:"answer"`
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // PacketRow is a normalized tshark field export row used by detectors.
 type PacketRow struct {
 	Number        int

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { formatBytes } from '../api'
 import { useAnalysisStore } from '../stores/analysis'
+import { useSettingsStore, type MessageKey } from '../stores/settings'
 import type { Severity } from '../types'
 
 const store = useAnalysisStore()
-const question = ref('Дай вердикт по угрозам и что проверить дальше.')
+const settings = useSettingsStore()
 
 const scoreClass = computed(() => {
   const s = store.analysis?.threat_score ?? 0
@@ -19,13 +20,94 @@ function sevClass(s: Severity) {
 }
 
 function catLabel(c: string) {
-  const map: Record<string, string> = {
-    ddos: 'DDoS / flood',
-    scan: 'Сканирование',
-    malware: 'Malware / C2',
-    anomaly: 'Аномалия',
+  const map: Record<string, MessageKey> = {
+    ddos: 'ddos', scan: 'scan', malware: 'malware', anomaly: 'anomaly',
   }
-  return map[c] || c
+  const key = map[c]
+  return key ? settings.t(key) : c
+}
+
+function severityLabel(severity: Severity) {
+  const labels: Record<Severity, string> = settings.language === 'en'
+    ? { info: 'info', low: 'low', medium: 'medium', high: 'high', critical: 'critical' }
+    : { info: 'инфо', low: 'низкий', medium: 'средний', high: 'высокий', critical: 'критичный' }
+  return labels[severity]
+}
+
+function indicator(threat: { indicators: string[] }, name: string) {
+  return threat.indicators.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1) || '0'
+}
+
+function threatTitle(threat: { id: string; title: string }) {
+  if (settings.language === 'ru') return threat.title
+  if (threat.id.startsWith('scan-port-')) return 'Vertical port scan'
+  if (threat.id.startsWith('scan-host-')) return 'Horizontal host scan'
+  if (threat.id.startsWith('malware-port-')) return `Suspicious port ${threat.id.slice('malware-port-'.length)}`
+  if (threat.id.startsWith('malware-exfil-')) return 'Possible data exfiltration'
+  if (threat.id.startsWith('malware-beacon-')) return 'Possible C2 beaconing'
+  const titles: Record<string, string> = {
+    'ddos-syn-flood': 'Possible SYN flood',
+    'ddos-udp-flood': 'Possible UDP flood',
+    'ddos-icmp-flood': 'Possible ICMP flood',
+    'ddos-high-pps': 'Unusually high packet rate',
+    'scan-fin': 'Possible FIN / stealth scan',
+    'scan-null': 'Possible NULL scan',
+    'malware-dns-dga': 'Suspicious DNS names (DGA-like)',
+    'malware-dns-flood': 'Unusual DNS volume',
+    'malware-http-probe': 'Suspicious HTTP requests',
+  }
+  return titles[threat.id] || threat.title
+}
+
+function threatDescription(threat: { id: string; description: string; indicators: string[]; sources?: string[]; targets?: string[]; count?: number }) {
+  if (settings.language === 'ru') return threat.description
+  const metric = (key: string) => indicator(threat, key)
+  switch (true) {
+    case threat.id === 'ddos-syn-flood':
+      return `${metric('syn_without_ack')} SYN packets without ACK and ${metric('syn_ack')} SYN-ACK packets (ratio ${metric('ratio')}). This pattern may indicate a TCP SYN flood.`
+    case threat.id === 'ddos-udp-flood':
+      return `${metric('udp_packets')} UDP packets (${metric('share')}% of capture). A high UDP share toward a small set of targets may indicate a flood or amplification.`
+    case threat.id === 'ddos-icmp-flood':
+      return `${metric('icmp_packets')} ICMP packets, including ${metric('echo_related')} echo-related packets. High echo traffic may indicate a ping flood.`
+    case threat.id === 'ddos-high-pps':
+      return `Average rate: ${metric('pps')} packets per second. A sustained high rate may indicate a flood or amplification attack.`
+    case threat.id.startsWith('scan-port-'):
+      return `${threat.sources?.[0] || 'A host'} → ${threat.targets?.[0] || 'a target'}: ${metric('unique_dst_ports')} unique destination ports, ${metric('sparse_hits')} with no more than two packets. This resembles a port scan.`
+    case threat.id.startsWith('scan-host-'):
+      return `${threat.sources?.[0] || 'A host'} probed ${metric('unique_dst_hosts')} hosts on destination port ${metric('dst_port')}. This resembles a network sweep.`
+    case threat.id === 'scan-fin':
+      return `${metric('fin_no_ack')} FIN packets without SYN/ACK. This pattern may indicate a stealth scan.`
+    case threat.id === 'scan-null':
+      return `${metric('null_like')} TCP-like packets without flags. This pattern may indicate a NULL scan.`
+    case threat.id.startsWith('malware-port-'):
+      return `Observed ${metric('packets')} packets on port ${threat.id.slice('malware-port-'.length)}. This port is commonly associated with backdoors, C2, or remote access tools.`
+    case threat.id === 'malware-dns-dga':
+      return `${metric('long_names')} long DNS names and ${metric('high_entropy')} high-entropy labels. This may indicate algorithmically generated domains or DNS tunneling.`
+    case threat.id === 'malware-dns-flood':
+      return `${metric('dns_packets')} DNS packets (${metric('share')}% of capture). The volume may indicate DNS tunneling or a DNS flood.`
+    case threat.id.startsWith('malware-exfil-'):
+      return `Host ${threat.id.slice('malware-exfil-'.length)} sent about ${(Number(metric('sent_bytes')) / 1e6).toFixed(1)} MB and received about ${(Number(metric('recv_bytes')) / 1e6).toFixed(1)} MB. This may indicate unusual outbound data transfer.`
+    case threat.id.startsWith('malware-beacon-'):
+      return `${metric('beacons')} repeated connection attempts at approximately ${metric('interval_sec')} second intervals (CV ${metric('cv')}). Regular callbacks may indicate C2 beaconing.`
+    case threat.id === 'malware-http-probe':
+      return `${threat.count || 0} requests matched exploitation or reconnaissance patterns, such as path traversal, web shell, or admin probes.`
+    default:
+      return threat.description
+  }
+}
+
+function displayLog(line: string) {
+  const splitAt = line.indexOf('  ')
+  if (splitAt < 0) return settings.status(line)
+  return `${line.slice(0, splitAt)}  ${settings.status(line.slice(splitAt + 2))}`
+}
+
+function displayFilename() {
+  const filename = store.analysis?.filename || ''
+  if (settings.language === 'ru' && filename.startsWith('Live capture')) {
+    return filename.replace('Live capture', 'Захват в реальном времени')
+  }
+  return filename
 }
 </script>
 
@@ -36,29 +118,27 @@ function catLabel(c: string) {
         <span class="mark" aria-hidden="true" />
         <div>
           <h1>Traffic Guardian</h1>
-          <p class="tag">Live traffic → tshark → эвристики → Gemini</p>
+          <p class="tag">{{ settings.t('tagline') }}</p>
         </div>
       </div>
       <div class="status mono fade-rise" style="animation-delay: 0.08s">
         <span :class="store.health?.tshark ? 'dot ok' : 'dot bad'" />
-        tshark
-        <span :class="store.health?.gemini ? 'dot ok' : 'dot mid'" />
-        gemini
+        {{ settings.t('tshark') }}
       </div>
     </header>
 
     <section class="hero fade-rise" style="animation-delay: 0.12s">
-      <div class="live-banner"><span :class="store.liveStatus === 'Захват активен' ? 'dot ok pulse' : 'dot mid'" /><strong>{{ store.liveStatus }}</strong><span class="mono muted">интерфейс: {{ store.analysis?.filename.split('·')[1]?.trim() || 'any' }}</span></div>
+      <div class="live-banner"><span :class="store.liveStatus === 'Захват активен' ? 'dot ok pulse' : 'dot mid'" /><strong>{{ settings.status(store.liveStatus) }}</strong><span class="mono muted">{{ settings.t('interface') }}: {{ store.analysis?.filename.split('·')[1]?.trim() || 'any' }}</span></div>
     </section>
 
     <template v-if="store.analysis">
       <section class="score-row fade-rise">
         <div class="score" :class="scoreClass">
           <div class="score-num mono">{{ store.analysis.threat_score }}</div>
-          <div class="score-label">threat score</div>
+          <div class="score-label">{{ settings.t('threatScore') }}</div>
         </div>
         <div class="meta">
-          <h2 class="mono">{{ store.analysis.filename }}</h2>
+          <h2 class="mono">{{ displayFilename() }}</h2>
           <div class="chips">
             <span>{{ store.analysis.summary.packet_count.toLocaleString() }} pkt</span>
             <span>{{ formatBytes(store.analysis.summary.bytes_total) }}</span>
@@ -72,16 +152,16 @@ function catLabel(c: string) {
 
       <section class="grid">
         <article class="panel wide">
-          <h3>Последние пакеты <span class="badge">live</span></h3>
-          <div class="live-table-wrap"><table class="table mono"><thead><tr><th>#</th><th>time</th><th>source</th><th>destination</th><th>proto</th><th>bytes</th></tr></thead>
+          <h3>{{ settings.t('latestPackets') }} <span class="badge">{{ settings.t('live') }}</span></h3>
+          <div class="live-table-wrap"><table class="table mono"><thead><tr><th>#</th><th>{{ settings.t('time') }}</th><th>{{ settings.t('source') }}</th><th>{{ settings.t('destination') }}</th><th>{{ settings.t('protocol') }}</th><th>{{ settings.t('bytes') }}</th></tr></thead>
             <tbody><tr v-for="(p, i) in [...store.livePackets].reverse()" :key="i"><td>{{ p.Number }}</td><td>{{ p.TimeRel.toFixed(3) }}s</td><td>{{ p.SrcIP }}:{{ p.SrcPort || '—' }}</td><td>{{ p.DstIP }}:{{ p.DstPort || '—' }}</td><td>{{ p.Protocol }}</td><td>{{ p.Length }}</td></tr></tbody>
           </table></div>
         </article>
         <article class="panel wide">
-          <h3>Логи tshark</h3><div class="live-logs mono"><div v-for="(line, i) in [...store.liveLogs].reverse()" :key="i">{{ line }}</div></div>
+          <h3>{{ settings.t('logs') }}</h3><div class="live-logs mono"><div v-for="(line, i) in [...store.liveLogs].reverse()" :key="i">{{ displayLog(line) }}</div></div>
         </article>
         <article class="panel fade-rise" style="animation-delay: 0.05s">
-          <h3>Протоколы</h3>
+          <h3>{{ settings.t('protocols') }}</h3>
           <ul class="bars">
             <li v-for="p in store.analysis.protocols.slice(0, 10)" :key="p.name">
               <div class="bar-head">
@@ -96,7 +176,7 @@ function catLabel(c: string) {
         </article>
 
         <article class="panel fade-rise" style="animation-delay: 0.1s">
-          <h3>Сводка</h3>
+          <h3>{{ settings.t('summary') }}</h3>
           <dl class="kv mono">
             <div><dt>TCP</dt><dd>{{ store.analysis.summary.tcp_count }}</dd></div>
             <div><dt>UDP</dt><dd>{{ store.analysis.summary.udp_count }}</dd></div>
@@ -104,23 +184,23 @@ function catLabel(c: string) {
             <div><dt>DNS</dt><dd>{{ store.analysis.summary.dns_count }}</dd></div>
             <div><dt>HTTP</dt><dd>{{ store.analysis.summary.http_count }}</dd></div>
             <div><dt>TLS</dt><dd>{{ store.analysis.summary.tls_count }}</dd></div>
-            <div><dt>порты</dt><dd>{{ store.analysis.summary.unique_ports }}</dd></div>
-            <div><dt>avg size</dt><dd>{{ store.analysis.summary.avg_packet_size.toFixed(0) }} B</dd></div>
+            <div><dt>{{ settings.t('ports') }}</dt><dd>{{ store.analysis.summary.unique_ports }}</dd></div>
+            <div><dt>{{ settings.t('avgSize') }}</dt><dd>{{ store.analysis.summary.avg_packet_size.toFixed(0) }} B</dd></div>
           </dl>
         </article>
 
         <article class="panel wide fade-rise" style="animation-delay: 0.15s">
-          <h3>Локальные угрозы <span class="badge">без Gemini</span></h3>
-          <div v-if="!store.analysis.threats.length" class="empty">Эвристики ничего критичного не нашли.</div>
+          <h3>{{ settings.t('localThreats') }}</h3>
+          <div v-if="!store.analysis.threats.length" class="empty">{{ settings.t('noThreats') }}</div>
           <ul v-else class="threats">
             <li v-for="t in store.analysis.threats" :key="t.id">
               <div class="threat-top">
-                <span class="sev" :class="sevClass(t.severity)">{{ t.severity }}</span>
+                <span class="sev" :class="sevClass(t.severity)">{{ severityLabel(t.severity) }}</span>
                 <span class="cat">{{ catLabel(t.category) }}</span>
-                <strong>{{ t.title }}</strong>
+                <strong>{{ threatTitle(t) }}</strong>
                 <span class="mono muted">{{ Math.round(t.confidence * 100) }}%</span>
               </div>
-              <p>{{ t.description }}</p>
+              <p>{{ threatDescription(t) }}</p>
               <div v-if="t.indicators?.length" class="inds mono">
                 <span v-for="(ind, i) in t.indicators.slice(0, 6)" :key="i">{{ ind }}</span>
               </div>
@@ -129,7 +209,7 @@ function catLabel(c: string) {
         </article>
 
         <article class="panel fade-rise" style="animation-delay: 0.2s">
-          <h3>Top talkers</h3>
+          <h3>{{ settings.t('topTalkers') }}</h3>
           <table class="table mono">
             <thead>
               <tr><th>IP</th><th>pkt</th><th>bytes</th></tr>
@@ -145,7 +225,7 @@ function catLabel(c: string) {
         </article>
 
         <article class="panel fade-rise" style="animation-delay: 0.25s">
-          <h3>Conversations</h3>
+          <h3>{{ settings.t('conversations') }}</h3>
           <table class="table mono">
             <thead>
               <tr><th>pair</th><th>proto</th><th>bytes</th></tr>
@@ -160,27 +240,6 @@ function catLabel(c: string) {
           </table>
         </article>
 
-        <article class="panel wide ai fade-rise" style="animation-delay: 0.3s">
-          <h3>Gemini <span class="badge soft">по запросу</span></h3>
-          <p class="hint">AI получает сводку и локальные детекции — не сырой PCAP целиком.</p>
-          <textarea v-model="question" rows="3" placeholder="Вопрос аналитику…" />
-          <div class="ai-actions">
-            <button
-              class="primary"
-              type="button"
-              :disabled="store.aiLoading || !store.health?.gemini"
-              @click="store.runAI(question)"
-            >
-              {{ store.aiLoading ? 'думает…' : 'спросить Gemini' }}
-            </button>
-            <span v-if="!store.health?.gemini" class="muted">GEMINI_API_KEY не задан</span>
-          </div>
-          <p v-if="store.aiError" class="err">{{ store.aiError }}</p>
-          <div v-if="store.ai" class="ai-answer">
-            <div class="ai-meta mono">{{ store.ai.model }}</div>
-            <pre>{{ store.ai.answer }}</pre>
-          </div>
-        </article>
       </section>
     </template>
   </div>
@@ -199,6 +258,7 @@ function catLabel(c: string) {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 28px;
+  padding-right: 100px;
 }
 
 .brand {
@@ -566,23 +626,6 @@ h1 {
   word-break: break-all;
 }
 
-.ai textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.8);
-  padding: 12px;
-  border-radius: var(--radius);
-  margin-bottom: 12px;
-}
-
-.ai-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
 .primary {
   border: 0;
   background: var(--ink);
@@ -605,27 +648,6 @@ h1 {
 .hint {
   margin: -6px 0 12px;
   font-size: 0.9rem;
-}
-
-.ai-answer {
-  margin-top: 8px;
-  padding: 14px;
-  background: rgba(11, 18, 32, 0.04);
-  border-left: 3px solid var(--accent);
-}
-
-.ai-meta {
-  font-size: 0.72rem;
-  color: var(--muted);
-  margin-bottom: 8px;
-  text-transform: uppercase;
-}
-
-.ai-answer pre {
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: var(--font);
-  line-height: 1.5;
 }
 
 .empty {

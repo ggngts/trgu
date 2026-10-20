@@ -1,23 +1,27 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { useAnalysisStore } from './stores/analysis'
+import { useSettingsStore } from './stores/settings'
 
 const store = useAnalysisStore()
-const dark = ref(localStorage.getItem('theme') === 'dark')
-function toggleTheme() {
-  dark.value = !dark.value
-  document.documentElement.dataset.theme = dark.value ? 'dark' : 'light'
-  localStorage.setItem('theme', dark.value ? 'dark' : 'light')
-}
+const settings = useSettingsStore()
 onMounted(() => {
-  document.documentElement.dataset.theme = dark.value ? 'dark' : 'light'
+  settings.applyTheme()
+  settings.setLanguage(settings.language)
   store.loadHealth()
   store.connectLive()
 })
 </script>
 
 <template>
-  <button class="theme-toggle" type="button" @click="toggleTheme" :aria-label="dark ? 'Включить светлую тему' : 'Включить тёмную тему'">{{ dark ? '☀' : '☾' }}</button>
+  <div class="settings-controls">
+    <button class="setting-toggle language-toggle" type="button" @click="settings.toggleLanguage" :aria-label="settings.t('language')">
+      {{ settings.language === 'en' ? 'RU' : 'EN' }}
+    </button>
+    <button class="setting-toggle theme-toggle" type="button" @click="settings.toggleTheme" :aria-label="settings.t(settings.dark ? 'switchTheme' : 'switchThemeDark')">
+      {{ settings.dark ? '☀' : '☾' }}
+    </button>
+  </div>
   <RouterView />
 </template>

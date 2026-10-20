@@ -1,4 +1,4 @@
-import type { AIResponse, Analysis, Health } from './types'
+import type { Analysis, Health } from './types'
 
 /** Production API — baked in, no .env */
 const BASE = 'https://api2.mpnetwork.space'
@@ -21,15 +21,6 @@ export async function uploadPcap(file: File): Promise<Analysis> {
   const form = new FormData()
   form.append('file', file)
   const res = await fetch(`${BASE}/api/analyze`, { method: 'POST', body: form })
-  return parse(res)
-}
-
-export async function askAI(id: string, question: string): Promise<AIResponse> {
-  const res = await fetch(`${BASE}/api/analysis/${id}/ai`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
-  })
   return parse(res)
 }
 

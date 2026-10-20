@@ -16,7 +16,6 @@ import (
 
 	"sharaga/internal/config"
 	"sharaga/internal/detect"
-	"sharaga/internal/gemini"
 	"sharaga/internal/models"
 	"sharaga/internal/store"
 	"sharaga/internal/tshark"
@@ -26,7 +25,6 @@ type Server struct {
 	cfg         config.Config
 	tshark      *tshark.Runner
 	store       *store.Memory
-	gemini      *gemini.Client
 	mux         *http.ServeMux
 	liveMu      sync.RWMutex
 	livePackets []models.PacketRow
@@ -34,8 +32,8 @@ type Server struct {
 	liveStatus  string
 }
 
-func New(cfg config.Config, ts *tshark.Runner, st *store.Memory, gm *gemini.Client) *Server {
-	s := &Server{cfg: cfg, tshark: ts, store: st, gemini: gm, mux: http.NewServeMux()}
+func New(cfg config.Config, ts *tshark.Runner, st *store.Memory) *Server {
+	s := &Server{cfg: cfg, tshark: ts, store: st, mux: http.NewServeMux()}
 	s.liveStatus = "Ожидание tshark"
 	go ts.Capture(context.Background(), cfg.CaptureInterface, cfg.CapturePipe, s.addLivePacket, s.addLiveLog)
 	s.routes()
@@ -51,7 +49,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/live", s.handleLive)
 	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
 	s.mux.HandleFunc("GET /api/analysis/{id}", s.handleGetAnalysis)
-	s.mux.HandleFunc("POST /api/analysis/{id}/ai", s.handleAI)
 
 	if s.cfg.StaticDir != "" {
 		fs := http.FileServer(http.Dir(s.cfg.StaticDir))
@@ -134,7 +131,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"ok":           true,
 		"tshark":       err == nil,
 		"tshark_error": errString(err),
-		"gemini":       s.gemini.Enabled(),
 		"time":         time.Now().UTC(),
 	})
 }
@@ -208,13 +204,7 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		ThreatScore:   score,
 	}
 
-	// Keep packets only if AI might need richer context later — store trims by TTL.
-	// Cap stored packets to avoid RAM blowups on huge captures.
-	stored := packets
-	if len(stored) > 50000 {
-		stored = stored[:50000]
-	}
-	s.store.Put(analysis, stored)
+	s.store.Put(analysis)
 
 	writeJSON(w, http.StatusOK, analysis)
 }
@@ -227,44 +217,6 @@ func (s *Server) handleGetAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
-}
-
-func (s *Server) handleAI(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	var a *models.Analysis
-	if id == "live" {
-		s.liveMu.RLock()
-		packets := append([]models.PacketRow(nil), s.livePackets...)
-		s.liveMu.RUnlock()
-		summary, protocols, talkers, convs := tshark.BuildStats(packets)
-		threats, score := detect.Run(packets, summary)
-		a = &models.Analysis{ID: "live", Filename: "Live capture", CreatedAt: time.Now().UTC(), Summary: summary, Protocols: protocols, TopTalkers: talkers, Conversations: convs, Threats: threats, ThreatScore: score}
-	} else {
-		var ok bool
-		a, _, ok = s.store.GetWithPackets(id)
-		if !ok {
-			writeErr(w, http.StatusNotFound, "анализ не найден или истёк")
-			return
-		}
-	}
-	if !s.gemini.Enabled() {
-		writeErr(w, http.StatusServiceUnavailable, "GEMINI_API_KEY не настроен")
-		return
-	}
-
-	var req models.AIRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeErr(w, http.StatusBadRequest, "некорректный JSON")
-		return
-	}
-
-	ctx := r.Context()
-	resp, err := s.gemini.Analyze(ctx, a, req.Question)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
 }
 
 var allowedOrigins = map[string]struct{}{

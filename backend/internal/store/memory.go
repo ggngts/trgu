@@ -9,7 +9,6 @@ import (
 
 type entry struct {
 	analysis *models.Analysis
-	packets  []models.PacketRow
 	expires  time.Time
 }
 
@@ -28,12 +27,11 @@ func New(ttl time.Duration) *Memory {
 	return m
 }
 
-func (m *Memory) Put(a *models.Analysis, packets []models.PacketRow) {
+func (m *Memory) Put(a *models.Analysis) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[a.ID] = &entry{
 		analysis: a,
-		packets:  packets,
 		expires:  time.Now().Add(m.ttl),
 	}
 }
@@ -46,16 +44,6 @@ func (m *Memory) Get(id string) (*models.Analysis, bool) {
 		return nil, false
 	}
 	return e.analysis, true
-}
-
-func (m *Memory) GetWithPackets(id string) (*models.Analysis, []models.PacketRow, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	e, ok := m.data[id]
-	if !ok || time.Now().After(e.expires) {
-		return nil, nil, false
-	}
-	return e.analysis, e.packets, true
 }
 
 func (m *Memory) gcLoop() {

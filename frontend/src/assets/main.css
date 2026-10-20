@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --ink: #0b1220;
   --ink-soft: #1a2438;
   --paper: #e6ebf1;
@@ -11,10 +12,18 @@
   --warn: #c47a12;
   --ok: #2f8f5b;
   --crit: #9b1d2e;
-  --font: 'Archivo', system-ui, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font: 'Google Sans Flex', system-ui, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --radius: 4px;
   --shadow: 0 18px 50px rgba(11, 18, 32, 0.12);
+}
+
+@font-face {
+  font-family: 'Google Sans Flex';
+  src: url('../../GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
 }
 
 :root[data-theme='dark'] {
@@ -55,23 +64,35 @@ body {
 
 :root[data-theme='dark'] .drop,
 :root[data-theme='dark'] .panel { background: rgba(24, 35, 49, 0.82); }
-:root[data-theme='dark'] .ai textarea { color: var(--ink); background: rgba(12, 19, 29, 0.8); }
 :root[data-theme='dark'] .chips span,
 :root[data-theme='dark'] .inds span { background: rgba(220, 235, 255, 0.08); }
 :root[data-theme='dark'] .bar-track { background: rgba(220, 235, 255, 0.1); }
 
-.theme-toggle {
+.settings-controls {
   position: fixed;
   z-index: 5;
   top: 18px;
   right: 18px;
+  display: flex;
+  gap: 8px;
+}
+
+.setting-toggle {
   width: 40px;
   height: 40px;
   border: 1px solid var(--line);
-  border-radius: 50%;
+  border-radius: 999px;
   color: var(--ink);
   background: var(--paper-2);
+}
+
+.theme-toggle {
   font-size: 1.2rem;
+}
+
+.language-toggle {
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 body::before {

@@ -76,15 +76,8 @@ export interface LivePacket {
   Length: number
 }
 
-export interface AIResponse {
-  answer: string
-  model: string
-  created_at: string
-}
-
 export interface Health {
   ok: boolean
   tshark: boolean
   tshark_error?: string
-  gemini: boolean
 }
