@@ -1,0 +1,12 @@
+.env
+node_modules/
+frontend/dist/
+backend/static/
+*.pcap
+*.pcapng
+*.cap
+/tmp/
+.DS_Store
+*.exe
+traffic-guardian
+sharaga

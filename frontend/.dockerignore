@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+*.md
+.vscode
+Dockerfile
+.dockerignore
+.env.development
+.env.local
