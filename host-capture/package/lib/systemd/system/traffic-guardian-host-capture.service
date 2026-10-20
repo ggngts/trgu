@@ -1,0 +1,21 @@
+[Unit]
+Description=Traffic Guardian host network capture
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/default/traffic-guardian-host-capture
+ExecStart=/usr/local/sbin/traffic-guardian-capture
+Restart=always
+RestartSec=2
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=traffic-guardian-capture
+
+[Install]
+WantedBy=multi-user.target

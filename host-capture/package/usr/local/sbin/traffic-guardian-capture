@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+CAPTURE_INTERFACE="${CAPTURE_INTERFACE:-any}"
+PIPE_PATH=/var/lib/traffic-guardian/traffic.pcapng
+
+if [ ! -p "$PIPE_PATH" ]; then
+	printf '%s\n' "capture FIFO missing: $PIPE_PATH" >&2
+	exit 1
+fi
+
+exec /usr/bin/tshark -l -n -p -i "$CAPTURE_INTERFACE" -w - > "$PIPE_PATH"

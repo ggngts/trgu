@@ -10,3 +10,16 @@ backend/static/
 *.exe
 traffic-guardian
 sharaga
+
+# Debian package build artifacts (keep host-capture/package sources tracked)
+*.deb
+*.udeb
+*.ddeb
+*.changes
+*.buildinfo
+*.build
+*.buildlog
+debian/.debhelper/
+debian/tmp/
+debian/files
+debian/*.substvars

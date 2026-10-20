@@ -1,0 +1,10 @@
+Package: traffic-guardian-host-capture
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: all
+Depends: tshark, systemd
+Maintainer: Traffic Guardian
+Description: Host network capture stream for Traffic Guardian
+ Runs tshark on the host network namespace and writes a continuous pcapng
+ stream to a FIFO that the Traffic Guardian backend can read.

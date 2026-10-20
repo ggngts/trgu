@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = configure ]; then
+	install -d -o root -g root -m 0755 /var/lib/traffic-guardian
+	pipe=/var/lib/traffic-guardian/traffic.pcapng
+	if [ ! -p "$pipe" ]; then
+		rm -f "$pipe"
+		mkfifo "$pipe"
+	fi
+	chmod 0666 "$pipe"
+	systemctl daemon-reload
+	systemctl enable --now traffic-guardian-host-capture.service
+fi
+
+exit 0

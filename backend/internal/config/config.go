@@ -29,6 +29,7 @@ type Config struct {
 	TsharkPath       string
 	StaticDir        string
 	CaptureInterface string
+	CapturePipe      string
 }
 
 func Load() Config {
@@ -47,6 +48,7 @@ func Load() Config {
 		TsharkPath:       TsharkPath,
 		StaticDir:        StaticDir,
 		CaptureInterface: envOr("CAPTURE_INTERFACE", CaptureInterface),
+		CapturePipe:      os.Getenv("CAPTURE_PIPE"),
 	}
 }
 

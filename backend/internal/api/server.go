@@ -37,7 +37,7 @@ type Server struct {
 func New(cfg config.Config, ts *tshark.Runner, st *store.Memory, gm *gemini.Client) *Server {
 	s := &Server{cfg: cfg, tshark: ts, store: st, gemini: gm, mux: http.NewServeMux()}
 	s.liveStatus = "Ожидание tshark"
-	go ts.Capture(context.Background(), cfg.CaptureInterface, s.addLivePacket, s.addLiveLog)
+	go ts.Capture(context.Background(), cfg.CaptureInterface, cfg.CapturePipe, s.addLivePacket, s.addLiveLog)
 	s.routes()
 	return s
 }

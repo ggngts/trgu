@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+systemctl daemon-reload || true
+if [ "$1" = purge ]; then
+	rm -f /var/lib/traffic-guardian/traffic.pcapng
+	rmdir /var/lib/traffic-guardian 2>/dev/null || true
+fi
+
+exit 0
